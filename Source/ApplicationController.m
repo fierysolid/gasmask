@@ -110,9 +110,7 @@ static ApplicationController *sharedInstance = nil;
 
 - (IBAction)closeEditorWindow:(id)sender
 {
-	[Preferences setShowEditorWindow:NO];
-	shouldQuit = NO;
-	[self quit:nil];
+    [self hideApplicationFromDock];
 }
 
 - (IBAction)addFromURL:(id)sender
@@ -203,8 +201,9 @@ static ApplicationController *sharedInstance = nil;
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication
 {
-	shouldQuit = NO;
-	return YES;
+    shouldQuit = YES;
+    [self hideApplicationFromDock];
+    return NO;
 }
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification
@@ -292,11 +291,25 @@ static ApplicationController *sharedInstance = nil;
     [NotificationHelper notify:@"Hosts File Activated" message:[hosts name]];
 }
 
+BOOL tranformAppToState(ProcessApplicationTransformState newState)
+{
+	ProcessSerialNumber psn = { 0, kCurrentProcess };
+	OSStatus transformStatus = TransformProcessType(&psn, newState);
+	if((transformStatus != 0))
+	{
+		NSError *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:transformStatus userInfo:nil];
+		NSLog(@"TranformAppToState: Unable to transform App state. Error - %@",error);
+	}
+
+	return (transformStatus == 0);
+}
+
 - (void)showApplicationInDock
 {
-	ProcessSerialNumber psn = {0, kCurrentProcess};
-	OSStatus returnCode = TransformProcessType(&psn, kProcessTransformToForegroundApplication);
-	if (returnCode == 0) {
+	BOOL bSuccess = tranformAppToState(kProcessTransformToForegroundApplication);
+	if(bSuccess)
+	{
+		[NSApp activateIgnoringOtherApps:YES];
 		ProcessSerialNumber psnx = {0, kNoProcess};
 		GetNextProcess(&psnx);
 		SetFrontProcess(&psnx);
@@ -306,11 +319,9 @@ static ApplicationController *sharedInstance = nil;
 
 - (void)hideApplicationFromDock
 {
-	NSArray *arguments = [NSArray arrayWithObjects:@"-c",
-						  [NSString stringWithFormat:@"sleep 1 ; /usr/bin/open '%@' --args \\#reopen\\#", [[NSBundle mainBundle] bundlePath]],
-						  nil];
-	[NSTask launchedTaskWithLaunchPath:@"/bin/sh" arguments:arguments];
-	[NSApp terminate:self];
+	tranformAppToState(kProcessTransformToBackgroundApplication);
+	[Preferences setShowEditorWindow:NO];
+	editorWindowOpened = NO;
 }
 
 - (void)setFront
